@@ -1,38 +1,22 @@
-import { MarsCreditManagerQueryClient } from '../mars-credit-manager/MarsCreditManager.client';
-import { CosmWasmClient } from '@cosmjs/cosmwasm-stargate';
+import { SigningCosmWasmClient } from '@cosmjs/cosmwasm-stargate';
 
-interface AccountDetails {
-  accountId: string;
-  accountKind: any;
-  debts: any[];
-  deposits: any[];
-  lends: any[];
-  stakedAstroLps: any[];
-  vaults: any[];
-  perpVault?: any | null;
-  perps?: any[];
+const rpcURL = 'https://rpc-kralum.neutron-1.neutron.org:443';
+const contractAddress =
+  'neutron1qdzn3l4kn7gsjna2tfpg3g3mwd6kunx4p50lfya59k02846xas6qslgs3r';
+
+export default async function getBalances(accountId: string) {
+  const client = await SigningCosmWasmClient.connect(rpcURL);
+  try {
+    const queryResult = await client.queryContractSmart(
+      contractAddress,
+      JSON.parse(`{
+      "positions": {
+        "account_id": "${accountId}"
+      }
+    }`)
+    );
+    return queryResult;
+  } catch (error) {
+    console.error(error);
+  }
 }
-
-async function getAccount(
-  client: CosmWasmClient,
-  contractAddress: string,
-  accountId: string
-): Promise<AccountDetails> {
-  const queryClient = new MarsCreditManagerQueryClient(client, contractAddress);
-
-  const positions = await queryClient.positions({ accountId });
-
-  return {
-    accountId: positions.account_id,
-    accountKind: positions.account_kind,
-    debts: positions.debts,
-    deposits: positions.deposits,
-    lends: positions.lends,
-    stakedAstroLps: positions.staked_astro_lps,
-    vaults: positions.vaults,
-    perpVault: positions.perp_vault,
-    perps: positions.perps,
-  };
-}
-
-export default getAccount;

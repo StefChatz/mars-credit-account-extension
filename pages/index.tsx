@@ -1,102 +1,188 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import getAccount from '../api/getAccount';
-import { getKeplrClient } from '../actions/getKeplrClient';
-import Neutron1 from '../config/neutron-1';
+import getPrices from '../api/getPrices';
+import styles from './home.module.css';
 
-const FetchAccountsButton = () => {
+export default function Home() {
   const [loading, setLoading] = useState(false);
   const [accountId, setAccountId] = useState('');
   const [data, setData] = useState<any>(null);
+  const [prices, setPrices] = useState<any>(null);
 
-  const handleFetch = async () => {
-    const client = await getKeplrClient(
-      'neutron15prdxhy6lg6rew76gjv07q59c5j6a78p47j9ht'
-    );
+  useEffect(() => {
+    // Load the cached account ID when the component mounts
+    const cachedAccountId = localStorage.getItem('cachedAccountId');
+    if (cachedAccountId) {
+      setAccountId(cachedAccountId);
+      handleFetch(cachedAccountId);
+    }
+  }, []);
 
+  const handleFetch = async (id: string = accountId) => {
     setLoading(true);
-    const data = await getAccount(
-      client,
-      Neutron1.contracts.creditManager,
-      accountId
-    );
-    setData(data);
+    const accountData = await getAccount(id);
+    const pricesData = await getPrices();
+    console.log(pricesData);
+    setData(accountData);
+    setPrices(pricesData);
     setLoading(false);
+
+    // Cache the account ID
+    localStorage.setItem('cachedAccountId', id);
+  };
+
+  const getTokenInfo = (denom: string) => {
+    const tokenInfo = prices?.find((token: any) => token.denom === denom);
+    return tokenInfo || { decimals: 0, priceUSD: 0, symbol: denom, icon: '' };
+  };
+
+  const convertAmount = (amount: string, denom: string) => {
+    const { decimals } = getTokenInfo(denom);
+    return parseFloat(amount) / Math.pow(10, decimals);
   };
 
   const calculateTotalBalance = (data: any) => {
     const sumAmounts = (items: any[]) =>
-      items.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+      items.reduce(
+        (sum, item) => sum + convertAmount(item.amount, item.denom),
+        0
+      );
     const deposits = sumAmounts(data.deposits || []);
     const lends = sumAmounts(data.lends || []);
-    const stakedAstroLps = sumAmounts(data.stakedAstroLps || []);
+    const stakedAstroLps = sumAmounts(data.staked_astro_lps || []);
     const vaults = sumAmounts(data.vaults || []);
     return deposits + lends + stakedAstroLps + vaults;
   };
 
   const calculateTotalDebts = (data: any) => {
-    return data.debts.reduce((sum, debt) => sum + parseFloat(debt.amount), 0);
+    return data.debts.reduce(
+      (sum, debt) => sum + convertAmount(debt.amount, debt.denom),
+      0
+    );
+  };
+
+  const calculateUsdValue = (amount: number, denom: string) => {
+    const { priceUSD } = getTokenInfo(denom);
+    return amount * priceUSD;
   };
 
   const totalBalance = data ? calculateTotalBalance(data) : 0;
   const totalDebts = data ? calculateTotalDebts(data) : 0;
   const netWorth = totalBalance - totalDebts;
 
+  const totalBalanceUsd = data
+    ? data.deposits
+        .concat(data.lends, data.staked_astro_lps, data.vaults)
+        .reduce((sum: number, item: any) => {
+          return (
+            sum +
+            calculateUsdValue(
+              convertAmount(item.amount, item.denom),
+              item.denom
+            )
+          );
+        }, 0)
+    : 0;
+
   return (
-    <>
-      <input
-        type="text"
-        placeholder="Enter account ID"
-        value={accountId}
-        onChange={(e) => setAccountId(e.target.value)}
-      />
-      <button
-        className="focus:outline-none text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-900"
-        onClick={handleFetch}
-      >
-        {loading ? 'Loading...' : 'Fetch Accounts'}
-      </button>
+    <div className={styles.container}>
+      <div className={styles.inputContainer}>
+        <input
+          type="text"
+          placeholder="Enter account ID"
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          className={styles.input}
+        />
+        <button
+          className={styles.fetchButton}
+          onClick={() => handleFetch()}
+          disabled={loading}
+        >
+          {loading ? 'Loading...' : 'Fetch Accounts'}
+        </button>
+      </div>
       {data && (
-        <div>
-          {data.debts.length > 0 && (
+        <div className={styles.container}>
+          <h3 className={styles.title}>Balances</h3>
+          <div className={styles.accountInfo}>
             <div>
-              <h3>Debts</h3>
-              <pre>{JSON.stringify(data.debts, null, 2)}</pre>
+              Account ID:{' '}
+              <span className={styles.accountValue}>{data.account_id}</span>
             </div>
-          )}
-          {data.deposits.length > 0 && (
             <div>
-              <h3>Deposits</h3>
-              <pre>{JSON.stringify(data.deposits, null, 2)}</pre>
+              Total Balance:{' '}
+              <span className={styles.accountValue}>
+                ${totalBalanceUsd.toFixed(2)}
+              </span>
             </div>
-          )}
-          {data.lends.length > 0 && (
             <div>
-              <h3>Lends</h3>
-              <pre>{JSON.stringify(data.lends, null, 2)}</pre>
+              Total Debt:{' '}
+              <span className={styles.accountValue}>
+                ${totalDebts.toFixed(2)}
+              </span>
             </div>
-          )}
-          {data.stakedAstroLps.length > 0 && (
             <div>
-              <h3>Staked Astro LPs</h3>
-              <pre>{JSON.stringify(data.stakedAstroLps, null, 2)}</pre>
+              Net Worth:{' '}
+              <span className={styles.accountValue}>
+                ${(totalBalanceUsd - totalDebts).toFixed(2)}
+              </span>
             </div>
-          )}
-          {data.vaults.length > 0 && (
-            <div>
-              <h3>Vaults</h3>
-              <pre>{JSON.stringify(data.vaults, null, 2)}</pre>
-            </div>
-          )}
-          <div>
-            <h3>Total Balance: {totalBalance}</h3>
-            <h3>Total Net Worth: {netWorth}</h3>
           </div>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th className={styles.assetHeader}>Asset</th>
+                <th className={styles.valueHeader}>Value</th>
+                <th className={styles.sizeHeader}>Size</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.deposits
+                .concat(data.lends, data.staked_astro_lps, data.vaults)
+                .map((item: any, index: number) => {
+                  const { symbol, icon } = getTokenInfo(item.denom);
+                  const isLent = data.lends.includes(item);
+                  const isStaked = data.staked_astro_lps.includes(item);
+                  return (
+                    <tr key={index}>
+                      <td className={styles.assetCell}>
+                        {icon && (
+                          <img
+                            src={icon}
+                            alt={symbol}
+                            width={20}
+                            height={20}
+                            className={styles.assetIcon}
+                          />
+                        )}
+                        <span className={styles.assetName}>{symbol}</span>
+                        {isLent && (
+                          <span className={styles.lentText}>(lent)</span>
+                        )}
+                        {isStaked && (
+                          <span className={styles.stakedText}>(staked)</span>
+                        )}
+                      </td>
+                      <td className={styles.valueCell}>
+                        $
+                        {calculateUsdValue(
+                          convertAmount(item.amount, item.denom),
+                          item.denom
+                        ).toFixed(2)}
+                      </td>
+                      <td className={styles.sizeCell}>
+                        {convertAmount(item.amount, item.denom).toFixed(6)}
+                      </td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
         </div>
       )}
-    </>
+    </div>
   );
-};
-
-export default FetchAccountsButton;
+}
