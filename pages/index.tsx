@@ -24,7 +24,6 @@ export default function Home() {
     setLoading(true);
     const accountData = await getAccount(id);
     const pricesData = await getPrices();
-    console.log(pricesData);
     setData(accountData);
     setPrices(pricesData);
     setLoading(false);
